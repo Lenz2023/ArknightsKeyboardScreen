@@ -1,0 +1,8 @@
+# 这些只是本地开发/打包用的东西，不需要同步到插件商店
+# 插件商店只取 manifest.json、main.js、preview.jpg
+
+README_zh.md
+*.plugin
+package-stage/
+infolink-inspect/
+.vscode/

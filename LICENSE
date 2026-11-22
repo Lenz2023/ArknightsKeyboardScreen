@@ -1,0 +1,52 @@
+MIT License
+
+Copyright (c) 2026 lanz (森空岛集成 / 卫戍协议 / 博士档案 / 首页场景 / 图库与 Web 上传 部分)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+===============================================================================
+重要：本许可证的适用范围
+===============================================================================
+
+本 MIT 许可证仅覆盖本仓库中“二次开发新增”的代码，主要位于：
+
+  - main/SklandApi.cpp            森空岛 API 客户端（签名、鉴权、数据拉取）
+  - main/ArtStore.cpp             用户自定义图片存储
+  - main/apps/SklandLogin.cpp     森空岛扫码登录
+  - main/apps/SklandGeneral.cpp   博士档案 / 日常数据页
+  - main/apps/SklandGarrison.cpp  卫戍协议页
+  - main/apps/Atmosphere / Weather 中的首页场景背景系统
+  - main/apps/home.cpp、Music.cpp 的二次修改部分
+  - main/apps/OperatorNames.inc   干员英文名（appellation）表
+  - main/scene_home_bg.c          首页场景图资源
+  - main/ArtStore.h、main/Atmosphere.h、main/SklandApi.h
+  - hal.cpp 中的 /art 图库与上传接口
+  - tools/ 下的生成与烧录脚本（flash.ps1 / flash.sh / gen_scene_bg.py 等）
+  - docs/ 下的文档与截图
+
+上游原始工程（ESP32 屏幕模块固件、ESP32 上的 Arduino/LVGL/TFT_eSPI 组件等）
+**不属于** MIT 覆盖范围，其授权条款见 README.md 开头的 “Develop document
+authorization instructions” 原始声明（授权来自 Skyloong：
+
+  - 公司商业用途需向 Skyloong 申请官方授权
+  - 个人爱好者非商业用途可自由使用 / 修改
+  - 联系方式：zhouziran@jikedingzhi.com
+）
+
+第三方组件各自保留原有许可证，详见 LICENSE-THIRD-PARTY.md。

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>刷入固件 · 明日方舟键盘副屏</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root {
+    --bg: #0b1620;
+    --card: #12222e;
+    --ink: #e6f2f6;
+    --dim: #8fb0bf;
+    --cyan: #57d8e8;
+    --lime: #d7e778;
+    --warn: #f0b46a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 40px 20px 64px;
+    background: radial-gradient(circle at 30% 0%, #16303f 0%, var(--bg) 60%);
+    color: var(--ink);
+    font: 16px/1.7 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: .5px; }
+  .sub { color: var(--dim); margin: 0 0 28px; font-size: 15px; }
+  .card {
+    background: var(--card);
+    border: 1px solid #1e3a4a;
+    border-radius: 12px;
+    padding: 22px 24px;
+    margin-bottom: 18px;
+  }
+  .card h2 { font-size: 17px; margin: 0 0 12px; color: var(--cyan); }
+  ol, ul { margin: 0; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .flashbox {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    padding: 30px 20px;
+    background: #0e1d28;
+    border: 1px dashed #2b566b;
+    border-radius: 12px;
+    margin-bottom: 18px;
+  }
+  esp-web-install-button { --esp-tools-button-color: var(--cyan); }
+  .hint { color: var(--dim); font-size: 14px; text-align: center; margin: 0; }
+  code {
+    background: #0a1620;
+    border: 1px solid #1c3543;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-size: 14px;
+    color: var(--lime);
+  }
+  .warn { color: var(--warn); }
+  .unsupported { display: none; color: var(--warn); text-align: center; }
+  footer { color: #5f7f8e; font-size: 13px; text-align: center; margin-top: 30px; }
+  a { color: var(--cyan); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>刷入固件</h1>
+  <p class="sub">SKYLOONG GK87 / GK4 键盘副屏 · 明日方舟面板 · ESP32-S3 / 16MB Flash</p>
+
+  <div class="flashbox">
+    <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
+    <p class="hint">
+      需要 <strong>Chrome / Edge 89+</strong>（桌面版）<br>
+      用 USB 数据线把键盘连到电脑，点上面的按钮 → 选择串口 → 等待烧录完成
+    </p>
+    <p class="hint unsupported" id="unsupported">
+      当前浏览器不支持 Web Serial。<br>请换用 Chrome 或 Edge，或看下面的「离线方式」。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>烧录步骤</h2>
+    <ol>
+      <li>用<strong>能传数据的 USB 线</strong>把键盘接到电脑（不是只能充电的线）。</li>
+      <li>点上面的 <strong>CONNECT</strong>，在弹窗里选串口——<strong>选哪个见下一节</strong>。</li>
+      <li>提示「Erase device」时<strong>选不要擦除</strong>（保留已保存的 WiFi / 账号 / 自定义背景）；只有想恢复出厂才擦。</li>
+      <li>等进度条走完（约 1–2 分钟），设备自动重启即完成。</li>
+    </ol>
+  </div>
+
+  <div class="card">
+    <h2>选哪个串口？</h2>
+    <p style="margin:0 0 12px;color:var(--dim);font-size:15px">
+      ESP32-S3 用原生 USB，插上后会<strong>同时出现两个口</strong>，名字不一样：
+    </p>
+    <ul>
+      <li><strong>选这个</strong> — 名字里带 <code>USB 串行设备</code>（英文 <code>USB Serial Device</code>），
+        Windows 形如 <code>USB 串行设备 (COM6)</code>；macOS 是 <code>/dev/cu.usbmodem14101</code>；
+        Linux 是 <code>/dev/ttyACM0</code>。</li>
+      <li><span class="warn">不要选</span> — 名字里带 <code>USB JTAG/serial debug unit</code> 的那个口，那是调试用的。</li>
+      <li>另外还能看到一个不带端口号的 <code>USB Composite Device</code>，它不是串口，选不了。</li>
+    </ul>
+    <p style="margin:12px 0 0;color:var(--dim);font-size:14px">
+      浏览器弹窗里通常只显示 <code>COM6</code> 这样的短名，看不到中文描述。想确认端口和名字的对应关系，
+      可以在 Windows 里执行一次
+      <code>Get-CimInstance Win32_SerialPort | Select-Object DeviceID,Name,PNPDeviceID</code>，
+      带 <code>VID_303A</code> 的就是这块键盘；或者直接跑 <code>tools\flash-noidf.ps1</code>，
+      它会打印"系统里的串口"列表并标出准备烧录的那一个。
+    </p>
+    <p style="margin:12px 0 0;color:var(--dim);font-size:14px">
+      万一选错了口烧不进去：回到页面再点一次 CONNECT，换另一个 <code>COM</code> 号重试即可，不会刷坏设备。
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>注意事项</h2>
+    <ul>
+      <li class="warn">键盘闲置约 10 分钟会自动熄屏休眠，休眠时 USB 会断开——<strong>先按一下键唤醒</strong>再点烧录。</li>
+      <li>如果提示端口被占用：关掉串口助手 / <code>idf.py monitor</code> / 其它占用串口的程序。</li>
+      <li>本页烧的是四个分片镜像（<code>0x0 / 0x8000 / 0x10000 / 0x20000</code>），<strong>不会动 NVS</strong>，所以设置和自定义背景图都保留。</li>
+      <li>烧完如果是第一次使用，屏幕会进配网二维码页：用手机连 <code>SKYLOONG 4.0 Screen</code> 热点完成配网。</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>浏览器不支持 / 想离线烧</h2>
+    <p style="margin:0 0 10px;color:var(--dim);font-size:15px">
+      仓库里提供了不依赖 ESP-IDF 的脚本，只要有 Python 就行：
+    </p>
+    <ul>
+      <li>Windows：<code>tools\flash-noidf.ps1</code></li>
+      <li>macOS / Linux：<code>tools/flash-noidf.sh</code></li>
+    </ul>
+    <p style="margin:10px 0 0;color:var(--dim);font-size:14px">
+      它们会自动装 esptool，再把 <code>docs/flasher/firmware/</code> 里的四个镜像写到各自偏移。
+      完整说明见 <a href="../FLASHING.md">烧录指南</a>。
+    </p>
+  </div>
+
+  <footer>
+    固件内嵌素材版权归 HYPERGRYPH（鹰角网络）；本项目为个人非商业二次开发。
+  </footer>
+</div>
+
+<script>
+  if (!("serial" in navigator)) {
+    document.getElementById("unsupported").style.display = "block";
+  }
+</script>
+</body>
+</html>

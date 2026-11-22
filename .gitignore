@@ -1,0 +1,42 @@
+# ---- ESP-IDF 构建产物（只忽略根目录产出，别误伤 components 里的预编译固件）----
+build/
+/all.bin
+/GK87-Screen.bin
+*.elf
+*.map
+flasher_args.json
+flash_args
+project_description.json
+compile_commands.json
+sdkconfig.old
+
+# ---- 本地工具链 / 缓存 ----
+.ccache/
+.ccache-tmp/
+.esp-idf/
+esp-idf/
+.idf-tools/
+
+# ---- 依赖与包缓存（任何层级）----
+node_modules/
+.npm-cache/
+.font-tool/node_modules/
+.ccache-cache/
+
+# ---- 组件由 idf.py 生成，可复现 ----
+managed_components/
+
+# ---- 运行期数据 ----
+data/*
+debug.log
+*.log
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/settings.json
+
+# ---- 本地个人配置（不要提交自己的 WiFi / 森空岛凭证）----
+sdkconfig.local
+*_credentials.json

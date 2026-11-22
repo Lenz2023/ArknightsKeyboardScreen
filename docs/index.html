@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arknights Keyboard Screen · 明日方舟键盘副屏</title>
+<style>
+  :root {
+    --bg: #0b1620;
+    --card: #12222e;
+    --ink: #e6f2f6;
+    --dim: #8fb0bf;
+    --cyan: #57d8e8;
+    --lime: #d7e778;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 56px 20px 64px;
+    background: radial-gradient(circle at 30% 0%, #16303f 0%, var(--bg) 60%);
+    color: var(--ink);
+    font: 16px/1.7 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 8px; letter-spacing: .5px; }
+  .sub { color: var(--dim); margin: 0 0 30px; font-size: 15px; }
+  .cta {
+    display: block;
+    text-align: center;
+    background: var(--cyan);
+    color: #07222b;
+    font-weight: 700;
+    font-size: 17px;
+    text-decoration: none;
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-bottom: 10px;
+    transition: filter .15s;
+  }
+  .cta:hover { filter: brightness(1.1); }
+  .cta-sub { color: var(--dim); font-size: 13px; text-align: center; margin: 0 0 34px; }
+  .card {
+    background: var(--card);
+    border: 1px solid #1e3a4a;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  .card h2 { font-size: 16px; margin: 0 0 10px; color: var(--cyan); }
+  ul { margin: 0; padding-left: 20px; }
+  li { margin: 6px 0; }
+  a { color: var(--cyan); }
+  code {
+    background: #0a1620;
+    border: 1px solid #1c3543;
+    border-radius: 5px;
+    padding: 1px 6px;
+    font-size: 14px;
+    color: var(--lime);
+  }
+  footer { color: #5f7f8e; font-size: 13px; text-align: center; margin-top: 28px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Arknights Keyboard Screen</h1>
+  <p class="sub">SKYLOONG GK87 / GK4 键盘副屏 · 明日方舟博士档案、卫戍协议、天气、歌词</p>
+
+  <a class="cta" href="flasher/">刷入固件 →</a>
+  <p class="cta-sub">用 Chrome / Edge 打开，插上键盘，点两下就刷好（不需要装任何环境）</p>
+
+  <img src="screenshots/00-keyboard-photo.jpg" alt="SKYLOONG GK87 副屏运行明日方舟面板实拍"
+       style="width:100%;border-radius:12px;border:1px solid #1e3a4a;margin:0 0 8px">
+  <p style="color:#8fb0bf;font-size:13px;text-align:center;margin:0 0 30px">
+    键盘实拍（照片做过调色处理；屏幕内容与真机一致）
+  </p>
+
+  <div class="card">
+    <h2>这是什么</h2>
+    <ul>
+      <li>键盘小屏上显示<b>明日方舟</b>：博士档案、每日/每周任务、卫戍协议战绩与赛季称号</li>
+      <li>还有天气、网易云歌词、系统设置、森空岛扫码登录</li>
+      <li>背景按<b>时间 + 天气</b>自动切换，素材取自游戏内「首页场景」，也可自己上传替换</li>
+      <li>配套一个网页图库，浏览器里裁好 320×240 直接传到设备</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>文档</h2>
+    <ul>
+      <li><a href="https://github.com/Lenz2023/ArknightsKeyboardScreen/blob/main/docs/USAGE.md">使用教程</a>：按键操作、配网、扫码登录、图库</li>
+      <li><a href="https://github.com/Lenz2023/ArknightsKeyboardScreen/blob/main/docs/FEATURES.md">功能说明</a>：每页细节 + 背景切换规则</li>
+      <li><a href="https://github.com/Lenz2023/ArknightsKeyboardScreen/blob/main/docs/FLASHING.md">烧录指南</a>：三种刷机方式与常见报错</li>
+      <li><a href="https://github.com/Lenz2023/ArknightsKeyboardScreen">源码仓库</a></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>不用浏览器也能刷</h2>
+    <ul>
+      <li>Windows：<code>.\tools\flash-noidf.ps1</code>（只要 Python 3，自动装 esptool）</li>
+      <li>macOS / Linux：<code>./tools/flash-noidf.sh</code></li>
+      <li>要改代码：装 ESP-IDF 5.1.4，跑 <code>.\tools\flash.ps1</code></li>
+    </ul>
+  </div>
+
+  <footer>
+    固件内嵌素材版权归 HYPERGRYPH（鹰角网络）；本项目为个人非商业二次开发。
+  </footer>
+</div>
+</body>
+</html>
