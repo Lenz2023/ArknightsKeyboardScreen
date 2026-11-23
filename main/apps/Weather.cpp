@@ -651,7 +651,6 @@ void updateWeather()
 #include <esp_http_client.h>
 #include <esp_crt_bundle.h>
 
-static String apikey;
 static String city;
 
 static cJSON *getForecastJson(const String &url)
@@ -671,14 +670,22 @@ static cJSON *getForecastJson(const String &url)
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) return nullptr;
     cJSON *result = nullptr;
-    if (esp_http_client_open(client, 0) == ESP_OK &&
-        esp_http_client_fetch_headers(client) >= 0 &&
-        esp_http_client_get_status_code(client) == 200) {
+    const esp_err_t openErr = esp_http_client_open(client, 0);
+    if (openErr != ESP_OK) {
+        ESP_LOGW("WeatherOM", "open failed: %d (%s)", (int)openErr, url.c_str());
+    }
+    const int64_t headerLen = openErr == ESP_OK ? esp_http_client_fetch_headers(client) : -1;
+    const int status = openErr == ESP_OK ? esp_http_client_get_status_code(client) : -1;
+    if (openErr == ESP_OK && (headerLen < 0 || status != 200)) {
+        ESP_LOGW("WeatherOM", "bad response: status=%d len=%lld %s", status, (long long)headerLen, url.c_str());
+    }
+    if (openErr == ESP_OK && headerLen >= 0 && status == 200) {
         constexpr size_t capacity = 8192;
         char *body = static_cast<char *>(malloc(capacity));
         if (body) {
             const int received = esp_http_client_read_response(client, body, capacity - 1);
-            if (received > 0 && esp_http_client_is_complete_data_received(client)) {
+            const bool complete = esp_http_client_is_complete_data_received(client);
+            if (received > 0 && complete) {
                 body[received] = 0;
                 result = cJSON_Parse(body);
             }
@@ -734,13 +741,18 @@ static bool fetchOpenMeteo(WeatherData &data, const String &country)
             longitude = lon->valuedouble;
             resolvedLocation = locationKey;
         }
+        if (!found) {
+            ESP_LOGW("WeatherOM", "geocode failed for '%s'", data.location);
+        }
         cJSON_Delete(root);
         if (!found) return false;
     }
 
     const String url = "https://api.open-meteo.com/v1/forecast?latitude=" + String(latitude, 5) +
         "&longitude=" + String(longitude, 5) +
-        "&timezone=auto&forecast_hours=24&hourly=temperature_2m,weather_code,is_day";
+        "&timezone=auto&forecast_hours=24&forecast_days=3"
+        "&current=temperature_2m,weather_code,is_day,wind_speed_10m"
+        "&hourly=temperature_2m,weather_code,is_day&daily=weather_code";
     cJSON *root = getForecastJson(url);
     const cJSON *hourly = cJSON_GetObjectItem(root, "hourly");
     const cJSON *times = cJSON_GetObjectItem(hourly, "time");
@@ -766,9 +778,33 @@ static bool fetchOpenMeteo(WeatherData &data, const String &country)
         data.hour_code[slot] = forecastWeatherCode(code->valueint, cJSON_IsNumber(day) && day->valueint == 0);
         received = true;
     }
+    bool currentOk = false;
+    const cJSON *current = cJSON_GetObjectItem(root, "current");
+    const cJSON *nowTemp = cJSON_GetObjectItem(current, "temperature_2m");
+    const cJSON *nowCode = cJSON_GetObjectItem(current, "weather_code");
+    const cJSON *nowDay = cJSON_GetObjectItem(current, "is_day");
+    if (cJSON_IsNumber(nowTemp) && cJSON_IsNumber(nowCode) &&
+        nowTemp->valuedouble >= -100 && nowTemp->valuedouble <= 70) {
+        const double degrees = nowTemp->valuedouble;
+        data.temperature_now = static_cast<int8_t>(degrees < 0 ? -(int)(-degrees + 0.5) : (int)(degrees + 0.5));
+        data.weatherCode_today = forecastWeatherCode(nowCode->valueint, cJSON_IsNumber(nowDay) && nowDay->valueint == 0);
+        const cJSON *wind = cJSON_GetObjectItem(current, "wind_speed_10m");
+        if (cJSON_IsNumber(wind) && wind->valuedouble >= 0 && wind->valuedouble <= 500)
+            data.windKmhPlusOne = static_cast<uint16_t>(wind->valuedouble + 0.5) + 1;
+        currentOk = true;
+    }
+    const cJSON *daily = cJSON_GetObjectItem(root, "daily");
+    const cJSON *dailyCodes = cJSON_GetObjectItem(daily, "weather_code");
+    if (cJSON_IsArray(dailyCodes) && cJSON_GetArraySize(dailyCodes) >= 3) {
+        data.weatherCode_tomorrow = forecastWeatherCode(cJSON_GetArrayItem(dailyCodes, 1)->valueint, false);
+        data.weatherCode_tomorrow_1 = forecastWeatherCode(cJSON_GetArrayItem(dailyCodes, 2)->valueint, false);
+    }
+    ESP_LOGI("WeatherOM", "'%s' %.4f,%.4f temp=%d code=%d hourly=%d current=%d",
+             data.location, latitude, longitude,
+             (int)data.temperature_now, (int)data.weatherCode_today, (int)received, (int)currentOk);
     cJSON_Delete(root);
     if (received) data.hour_code[0] |= 0x80;
-    return received;
+    return received || currentOk;
 }
 
 bool getWeather()
@@ -777,110 +813,22 @@ bool getWeather()
     portENTER_CRITICAL(&weatherDataMux);
     candidate = weatherData;
     portEXIT_CRITICAL(&weatherDataMux);
-    HTTPClient http;
-    bool updated = false;
-    String country;
     const WeatherData previous = candidate;
-    String url = "http://api.seniverse.com/v3/weather/now.json?key=" + apikey + "&location=" + city + "&language=zh-Hans&unit=c";
-    http.begin(url);
-    int httpCode = http.GET();
-    if (httpCode == 200)
-    {
-        String payload = http.getString();
-        cJSON *root = cJSON_Parse(payload.c_str());
-        cJSON *results = cJSON_GetObjectItem(root, "results");
-        results = cJSON_GetArrayItem(results, 0);
-        cJSON *location = cJSON_GetObjectItem(results, "location");
-        cJSON *now = cJSON_GetObjectItem(results, "now");
-        cJSON *code = cJSON_GetObjectItem(now, "code");
-        cJSON *temperature = cJSON_GetObjectItem(now, "temperature");
-        cJSON *name = cJSON_GetObjectItem(location, "name");
+    const String country = "CN";
 
-        if (cJSON_IsString(code) && cJSON_IsString(temperature) && cJSON_IsString(name)) {
-            if (strcmp(candidate.location, name->valuestring) != 0) {
-                candidate = {};
-                candidate.weatherCode_tomorrow = 39;
-                candidate.weatherCode_tomorrow_1 = 39;
-            }
-            candidate.weatherCode_today = atoi(code->valuestring);
-            candidate.temperature_now = atoi(temperature->valuestring);
-            snprintf(candidate.location, sizeof(candidate.location), "%s", name->valuestring);
-            const cJSON *countryCode = cJSON_GetObjectItem(location, "country");
-            if (cJSON_IsString(countryCode)) country = countryCode->valuestring;
-            updated = true;
+    // Open-Meteo only: the request below carries current conditions, the 24h
+    // strip and the two-day outlook, and it needs no API key or secret.
+    if (city.length())
+        snprintf(candidate.location, sizeof(candidate.location), "%s", city.c_str());
+    const bool updated = fetchOpenMeteo(candidate, country);
+    if (!updated) {
+        if (strcmp(candidate.location, previous.location) == 0) {
+            memcpy(candidate.hour_time, previous.hour_time, sizeof(candidate.hour_time));
+            memcpy(candidate.hour_code, previous.hour_code, sizeof(candidate.hour_code));
+            memcpy(candidate.hour_temperature, previous.hour_temperature, sizeof(candidate.hour_temperature));
         }
-        cJSON_Delete(root);
+        return false;
     }
-    http.end();
-    if (!updated && !candidate.location[0]) return false;
-    memset(candidate.hour_time, 0, sizeof(candidate.hour_time));
-    memset(candidate.hour_code, 0, sizeof(candidate.hour_code));
-    if (!country.length() && strcmp(candidate.location, "北京") == 0) country = "CN";
-    url = "http://api.seniverse.com/v3/weather/hourly.json?key=" + apikey + "&location=" + city + "&language=zh-Hans&unit=c&start=0&hours=24";
-    http.begin(url);
-    httpCode = http.GET();
-    if (httpCode == 200) {
-        String payload = http.getString();
-        cJSON *root = cJSON_Parse(payload.c_str());
-        cJSON *results = root ? cJSON_GetArrayItem(cJSON_GetObjectItem(root, "results"), 0) : nullptr;
-        cJSON *hourly = results ? cJSON_GetObjectItem(results, "hourly") : nullptr;
-        if (hourly && cJSON_GetArraySize(hourly) >= 1) {
-            for (int i = 0; i < 6; ++i) {
-                cJSON *item = cJSON_GetArrayItem(hourly, i * 4);
-                if (!item) continue;
-                cJSON *time = cJSON_GetObjectItem(item, "time");
-                cJSON *temp = cJSON_GetObjectItem(item, "temperature");
-                cJSON *code = cJSON_GetObjectItem(item, "code");
-                if (cJSON_IsString(time) && cJSON_IsString(temp) && cJSON_IsString(code)) {
-                    candidate.hour_temperature[i] = atoi(temp->valuestring);
-                    candidate.hour_code[i] = atoi(code->valuestring);
-                    const char *t = time->valuestring;
-                    const char *clock = strchr(t, 'T');
-                    if (clock && strspn(clock + 1, "0123456789:") >= 5 && clock[3] == ':') snprintf(candidate.hour_time[i], sizeof(candidate.hour_time[i]), "%.5s", clock + 1);
-                }
-            }
-        }
-        if (root) cJSON_Delete(root);
-    }
-    http.end();
-    url = "http://api.seniverse.com/v3/weather/daily.json?key=" + apikey + "&location=" + city + "&language=zh-Hans&unit=c&start=0&days=3";
-    http.begin(url);
-    httpCode = http.GET();
-    if (httpCode == 200)
-    {
-        String payload = http.getString();
-        cJSON *root = cJSON_Parse(payload.c_str());
-        cJSON *results = cJSON_GetObjectItem(root, "results");
-        results = cJSON_GetArrayItem(results, 0);
-        cJSON *daily = cJSON_GetObjectItem(results, "daily");
-        cJSON *today = cJSON_GetArrayItem(daily, 0);
-        cJSON *tomorrow = cJSON_GetArrayItem(daily, 1);
-        cJSON *tomorrow_1 = cJSON_GetArrayItem(daily, 2);
-        const cJSON *code_tomorrow = cJSON_GetObjectItem(tomorrow, "code_day");
-        const cJSON *code_tomorrow_1 = cJSON_GetObjectItem(tomorrow_1, "code_day");
-        if (cJSON_IsString(code_tomorrow) && cJSON_IsString(code_tomorrow_1)) {
-            const cJSON *wind = cJSON_GetObjectItem(today, "wind_speed");
-            candidate.windKmhPlusOne = 0;
-            if (cJSON_IsString(wind) && wind->valuestring) {
-                char *end;
-                const double speed = strtod(wind->valuestring, &end);
-                if (end != wind->valuestring && *end == '\0' && speed >= 0 && speed <= 500)
-                    candidate.windKmhPlusOne = static_cast<uint16_t>(speed + 0.5) + 1;
-            }
-            candidate.weatherCode_tomorrow = atoi(code_tomorrow->valuestring);
-            candidate.weatherCode_tomorrow_1 = atoi(code_tomorrow_1->valuestring);
-            updated = true;
-        }
-        cJSON_Delete(root);
-    }
-    http.end();
-    const bool hourlyUpdated = candidate.hour_time[0][0] || fetchOpenMeteo(candidate, country);
-    if (!hourlyUpdated && strcmp(candidate.location, previous.location) == 0) {
-        memcpy(candidate.hour_time, previous.hour_time, sizeof(candidate.hour_time));
-        memcpy(candidate.hour_code, previous.hour_code, sizeof(candidate.hour_code));
-        memcpy(candidate.hour_temperature, previous.hour_temperature, sizeof(candidate.hour_temperature));
-    }
-    if (!updated && !hourlyUpdated) return false;
     portENTER_CRITICAL(&weatherDataMux);
     weatherData = candidate;
     ++weatherHomeDataRevision;
@@ -973,12 +921,12 @@ static void homeWeatherServiceTaskEntry(void *)
             }
         }
 
-        const bool hasWeatherSettings = app_settings_save.weather_secret[0] && app_settings_save.weather_city[0];
+        // Open-Meteo needs no API key, only a city to geocode.
+        const bool hasWeatherSettings = app_settings_save.weather_city[0] != 0;
         const bool refreshDue = lastWeatherAttempt == 0 || now - lastWeatherAttempt >= weatherRefreshInterval;
         if (hal.weather_enable && hasWeatherSettings && refreshDue && !homeWeatherFetchInProgress) {
             lastWeatherAttempt = now;
             homeWeatherFetchInProgress = true;
-            apikey = app_settings_save.weather_secret;
             city = app_settings_save.weather_city;
             if (getWeather()) {
                 const time_t weatherTime = currentWeatherEpoch();

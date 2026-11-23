@@ -39,7 +39,7 @@
 - `APS.cpp`：统计按键速率和总数，并绘制图表。
 - `GIF.cpp`：从 LittleFS 枚举 `.mpeg` 文件并通过 MPEG 解码播放。
 - `jpg.cpp`：从 LittleFS 枚举 JPG，按固定文件或滚动模式显示。
-- `Weather.cpp`：查询心知天气的实时天气、生活建议和 3 天天气预报，图标资源编译在固件中。
+- `Weather.cpp`：查询天气（实时、24 小时逐时、3 天展望），图标资源编译在固件中。当前实现只走 Open-Meteo，不需要 API key。
 - `Sysinfo.cpp`：连接配置的局域网 IP/端口，接收 `float cpu_pct; float mem_pct` 结构并绘制仪表。
 - `settings.cpp`：配置网络、时间、页面开关、主题、亮度、音量、语言、按键音、网页服务器、OTA/恢复等。
 - `qrcode.cpp` 与 `esp_dpp_prov.cpp`：显示并处理 Wi-Fi Easy Connect/DPP 配网流程。
@@ -48,7 +48,7 @@
 
 网页服务器在 `HAL::start_webserver()` 中启动。若设备没有可用 STA 连接，则启动名为 `SKYLOONG 4.0 Screen` 的 SoftAP，使用 192.168.4.1 并运行 DNS 捕获门户；否则通过已连接的局域网提供服务。接口涵盖设备信息、扫描 Wi-Fi、配置 Wi-Fi/主题/时区/语言/按键音和页面开关、配置 JSON、时间同步、重启，以及 LittleFS 文件列表、上传、创建和删除。上传 JPG/MPEG 会请求对应 App 刷新。静态网页资源由 `web/` 与 `main/include/webserver/` 组合提供。
 
-网络与持久化数据分成几类：NVS Preferences 保存屏幕设置和最近页面；LittleFS 的 `/.wifi.csv` 保存 Wi-Fi 名称/密码，`/.cfg.bin` 保存 App 配置结构，媒体文件保存在 LittleFS。天气配置为心知 API key 和城市；系统信息配置为电脑 IP、端口及自定义文字。
+网络与持久化数据分成几类：NVS Preferences 保存屏幕设置和最近页面；LittleFS 的 `/.wifi.csv` 保存 Wi-Fi 名称/密码，`/.cfg.bin` 保存 App 配置结构，媒体文件保存在 LittleFS。天气配置只用到城市名（key 字段保留但已不再使用）；系统信息配置为电脑 IP、端口及自定义文字。
 
 ## 5. 构建与 Flash 布局
 
@@ -78,7 +78,7 @@ README 指定 ESP-IDF 5.1.4、VS Code ESP-IDF 扩展和 Windows 编译环境，�
 3. **若干请求值直接复制到固定长度缓冲区。** 如 `/config_wifi` 将请求参数 `strcpy` 到 64 字节的 `hal.ssid`、`hal.password`；`/config_keytone`、`/config_app_jpg` 也有固定数组写入。未经长度检查的过长参数可能覆盖内存，应改为有界复制并验证长度。
 4. **配置 JSON 和天气 JSON 解析缺少完整的空值/长度校验。** `parseAppSettings()` 在解析失败后回退默认 JSON，但随后直接解引用对象字段并复制到定长数组；天气 API 的 JSON 也直接解引用字段并 `strcpy`。错误响应或异常字段可能导致空指针访问或缓冲区越界。
 5. **Wi-Fi 凭据以明文写入文件系统。** `/.wifi.csv` 以 `SSID,password` 文本格式保存。设备文件系统或固件调试访问可读取凭据；文件列表接口会过滤点文件，但这不等同于对数据本身加密。
-6. **天气和 OTA URL 使用 HTTP。** `Weather.cpp` 访问心知 API 的 URL 是 `http://`；设置页 OTA 更新地址也为 HTTP。传输内容缺少 TLS 保护，网络中间人可观察或修改传输数据。
+6. **OTA 更新地址使用 HTTP。** 天气数据现在走 Open-Meteo（HTTPS），但设置页里的 OTA 更新地址仍是 HTTP，传输内容缺少 TLS 保护，网络中间人可观察或修改传输数据。
 7. **分支文档与脚本需进一步确认。** README 写本分支只支持 Windows，但 `createBin.sh` 是 Bash 脚本；该脚本或许只供特定发布环境使用。README 也没有补充 Web API、配网和媒体格式细节。
 
 ## 8. 总结
