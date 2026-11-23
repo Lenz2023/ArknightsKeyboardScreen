@@ -77,8 +77,9 @@ void resetDecoder(PlayState &st, const uint8_t *begin, const uint8_t *end)
     st.playedBytes = 0;
     st.gain = 0.0f;
     st.samplesPlayed = 0;
-    // 48kbps 单声道 44.1kHz：总样本数 ≈ 文件字节数 / 6（粗略），只用于计算淡出位置
-    st.totalSamples = (int)(st.totalBytes / 6);
+    // 曲目统一是 CBR 48kbps 单声道 44.1kHz：每秒 6000 字节、44100 个样本
+    // 样本数 = 字节数 * 8 / 48000 * 44100  （之前误写成 字节数/6，导致淡出起点落在 0.2 秒，整首几乎静音）
+    st.totalSamples = (int)((long long)st.totalBytes * 44100LL * 8LL / 48000LL);
     mp3dec_init(&decoder);
     frameInfo = {};
 }

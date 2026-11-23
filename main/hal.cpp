@@ -7,7 +7,6 @@
 #include "driver/i2s_std.h"
 #include <math.h>
 #include <Wire.h>
-#include "keytone/keytone2.h"
 
 #include <TFT_eSPI.h>
 TFT_eSPI tft = TFT_eSPI(); 
@@ -234,6 +233,12 @@ void HAL::init()
     loadAppSettings();
     pref.begin("settings", false);
     hal._brightness = pref.getUInt("bright", 6);
+    // 音量首次启用时统一归零：早期测试可能把音量写进了 NVS
+    if (!pref.getBool("audio_ready", false))
+    {
+        pref.putUInt("volume", 0);
+        pref.putBool("audio_ready", true);
+    }
     hal._volume = pref.getUInt("volume", 0);
     hal.setVolume(hal._volume);
     bgm::init();
@@ -480,18 +485,6 @@ esp_err_t HAL::audio_init()
     return ESP_OK;
 }
 
-void HAL::audio_stop()
-{
-    es8311_voice_volume_set(es_handle, 0, NULL);
-    digitalWrite(AUDIO_AMP_CTRL, LOW);
-    if (i2s_tx)
-    {
-        i2s_channel_disable(i2s_tx);
-        i2s_del_channel(i2s_tx);
-        i2s_tx = nullptr;
-    }
-}
-
 size_t HAL::audio_write(const uint8_t *data, size_t len)
 {
     if (!i2s_tx || !data || !len)
@@ -500,75 +493,6 @@ size_t HAL::audio_write(const uint8_t *data, size_t len)
     if (i2s_channel_write(i2s_tx, data, len, &written, pdMS_TO_TICKS(1000)) != ESP_OK)
         return 0;
     return written;
-}
-
-void HAL::audio_playWav(const uint8_t *wav, size_t len)
-{
-    if (!i2s_tx || !wav || len < 44)
-        return;
-    if (memcmp(wav, "RIFF", 4) != 0 || memcmp(wav + 8, "WAVE", 4) != 0)
-    {
-        ESP_LOGW("HAL", "not a RIFF/WAVE buffer");
-        return;
-    }
-    size_t pos = 12;
-    const uint8_t *pcm = nullptr;
-    size_t pcm_len = 0;
-    while (pos + 8 <= len)
-    {
-        const uint8_t *id = wav + pos;
-        uint32_t chunk = (uint32_t)wav[pos + 4] | ((uint32_t)wav[pos + 5] << 8) |
-                         ((uint32_t)wav[pos + 6] << 16) | ((uint32_t)wav[pos + 7] << 24);
-        if (memcmp(id, "data", 4) == 0)
-        {
-            pcm = wav + pos + 8;
-            pcm_len = chunk;
-            if (pcm_len > len - (pos + 8))
-                pcm_len = len - (pos + 8);
-            break;
-        }
-        pos += 8 + chunk + (chunk & 1);
-    }
-    if (!pcm || !pcm_len)
-    {
-        ESP_LOGW("HAL", "wav has no data chunk");
-        return;
-    }
-    ESP_LOGI("HAL", "play wav: %u bytes pcm", (unsigned)pcm_len);
-    size_t off = 0;
-    while (off < pcm_len)
-    {
-        size_t chunk = pcm_len - off;
-        if (chunk > 4096)
-            chunk = 4096;
-        size_t written = 0;
-        if (i2s_channel_write(i2s_tx, pcm + off, chunk, &written, pdMS_TO_TICKS(1000)) != ESP_OK)
-        {
-            ESP_LOGW("HAL", "i2s write failed at %u", (unsigned)off);
-            break;
-        }
-        off += written;
-    }
-    ESP_LOGI("HAL", "wav done");
-}
-
-void HAL::audio_tone(int freq, int ms)
-{
-    if (!i2s_tx)
-        return;
-    int16_t frame[2];
-    const int total = (AUDIO_SAMPLE_RATE * ms) / 1000;
-    double phase = 0.0;
-    const double step = 2.0 * 3.14159265358979323846 * (double)freq / (double)AUDIO_SAMPLE_RATE;
-    size_t written = 0;
-    for (int i = 0; i < total; ++i)
-    {
-        int16_t v = (int16_t)(28000.0 * sin(phase));
-        phase += step;
-        frame[0] = v;
-        frame[1] = v;
-        i2s_channel_write(i2s_tx, frame, sizeof(frame), &written, pdMS_TO_TICKS(100));
-    }
 }
 
 void HAL::setVolume(int8_t volume)
@@ -1428,21 +1352,7 @@ void HAL::start_webserver()
     }
 
     // 调试/验证用：/bgm?vol=5 或 /bgm?slot=5&vol=5
-    server.on("/bgm", HTTP_GET, []() {
-        if (server.hasArg("vol"))
-        {
-            int v = server.arg("vol").toInt();
-            hal.setVolume((int8_t)v);
-            hal.pref.putUInt("volume", hal._volume);
-        }
-        if (server.hasArg("slot"))
-            bgm::setSlot(server.arg("slot").toInt());
-        char out[128];
-        snprintf(out, sizeof(out), "vol=%d playing=%d", hal._volume, bgm::currentSlot());
-        server.send(200, "text/plain", out);
-    });
-
-    server.on("/info", HTTP_GET, []() {
+        server.on("/info", HTTP_GET, []() {
         cJSON *json = cJSON_CreateObject();
 
         if (WiFi.getMode() == WIFI_AP) {
