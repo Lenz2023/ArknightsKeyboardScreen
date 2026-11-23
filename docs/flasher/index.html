@@ -73,10 +73,10 @@
     <esp-web-install-button manifest="manifest.json"></esp-web-install-button>
     <p class="hint">
       需要 <strong>Chrome / Edge 89+</strong>（桌面版）<br>
-      用 USB 数据线把键盘连到电脑，点上面的按钮 → 选择串口 → 等待烧录完成
+      用 USB 数据线把键盘连到电脑，点上面的按钮 → 选 <strong>USB JTAG/serial debug unit</strong> 那个串口 → 等待烧录完成
     </p>
     <p class="hint unsupported" id="unsupported">
-      当前浏览器不支持 Web Serial。<br>请换用 Chrome 或 Edge，或看下面的「离线方式」。
+      当前浏览器不支持 Web Serial。<br>请换用桌面版 Chrome 或 Edge。
     </p>
   </div>
 
@@ -93,21 +93,19 @@
   <div class="card">
     <h2>选哪个串口？</h2>
     <p style="margin:0 0 12px;color:var(--dim);font-size:15px">
-      ESP32-S3 用原生 USB，插上后会<strong>同时出现两个口</strong>，名字不一样：
+      ESP32-S3 用原生 USB，插上后会出现几个设备，<strong>烧录要用带 <code>USB JTAG/serial debug unit</code> 的那一个</strong>：
     </p>
     <ul>
-      <li><strong>选这个</strong> — 名字里带 <code>USB 串行设备</code>（英文 <code>USB Serial Device</code>），
-        Windows 形如 <code>USB 串行设备 (COM6)</code>；macOS 是 <code>/dev/cu.usbmodem14101</code>；
-        Linux 是 <code>/dev/ttyACM0</code>。</li>
-      <li><span class="warn">不要选</span> — 名字里带 <code>USB JTAG/serial debug unit</code> 的那个口，那是调试用的。</li>
+      <li><strong>选这个</strong> — <code>USB JTAG/serial debug unit</code>，Windows 里通常显示为
+        <code>USB JTAG/serial debug unit (COM7)</code> 这样的名字。</li>
+      <li><span class="warn">不要选</span> — 名字里带 <code>USB 串行设备</code>（英文 <code>USB Serial Device</code>）的那个口，
+        它只用来输出日志。</li>
       <li>另外还能看到一个不带端口号的 <code>USB Composite Device</code>，它不是串口，选不了。</li>
     </ul>
     <p style="margin:12px 0 0;color:var(--dim);font-size:14px">
-      浏览器弹窗里通常只显示 <code>COM6</code> 这样的短名，看不到中文描述。想确认端口和名字的对应关系，
-      可以在 Windows 里执行一次
-      <code>Get-CimInstance Win32_SerialPort | Select-Object DeviceID,Name,PNPDeviceID</code>，
-      带 <code>VID_303A</code> 的就是这块键盘；或者直接跑 <code>tools\flash-noidf.ps1</code>，
-      它会打印"系统里的串口"列表并标出准备烧录的那一个。
+      浏览器弹窗里通常只显示 <code>COM7</code> 这样的短名，看不到描述。想确认端口和名字的对应关系，可以在 Windows 里执行一次
+      <code>Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -match 'COM\d+' } | Select-Object Name,DeviceID</code>，
+      名字里带 <code>JTAG</code> 的那一行就是烧录要用的端口。
     </p>
     <p style="margin:12px 0 0;color:var(--dim);font-size:14px">
       万一选错了口烧不进去：回到页面再点一次 CONNECT，换另一个 <code>COM</code> 号重试即可，不会刷坏设备。
@@ -122,21 +120,6 @@
       <li>本页烧的是四个分片镜像（<code>0x0 / 0x8000 / 0x10000 / 0x20000</code>），<strong>不会动 NVS</strong>，所以设置和自定义背景图都保留。</li>
       <li>烧完如果是第一次使用，屏幕会进配网二维码页：用手机连 <code>SKYLOONG 4.0 Screen</code> 热点完成配网。</li>
     </ul>
-  </div>
-
-  <div class="card">
-    <h2>浏览器不支持 / 想离线烧</h2>
-    <p style="margin:0 0 10px;color:var(--dim);font-size:15px">
-      仓库里提供了不依赖 ESP-IDF 的脚本，只要有 Python 就行：
-    </p>
-    <ul>
-      <li>Windows：<code>tools\flash-noidf.ps1</code></li>
-      <li>macOS / Linux：<code>tools/flash-noidf.sh</code></li>
-    </ul>
-    <p style="margin:10px 0 0;color:var(--dim);font-size:14px">
-      它们会自动装 esptool，再把 <code>docs/flasher/firmware/</code> 里的四个镜像写到各自偏移。
-      完整说明见 <a href="../FLASHING.md">烧录指南</a>。
-    </p>
   </div>
 
   <footer>

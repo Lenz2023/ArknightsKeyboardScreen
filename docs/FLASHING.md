@@ -30,7 +30,7 @@
    ```
 2. 用**数据线**把键盘连到电脑，点页面上的 **CONNECT**。
 3. 弹窗里选新出现的串口（Windows 一般是 `COM6` / `COM7`；macOS 是 `/dev/cu.usbmodem*`）。
-   认不准就选名字带 **USB 串行设备** 的那个，别选 `USB JTAG/serial debug unit`。
+   认不准就选名字带 **USB 串行设备** 的那个，。
 4. 提示 *Erase device* 时**一般选不要擦除**（保留设置）；只有想恢复出厂才选 Erase。
 5. 进度条走完，设备自动重启即完成。
 
