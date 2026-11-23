@@ -287,3 +287,5 @@ const char *atmosphereSceneLabel(void);    // CLEAR / CLOUDY / RAIN / SNOW / DUS
   详见 [README-UPSTREAM.md](README-UPSTREAM.md)
 - **第三方组件**：各自保留原许可证，详见 [LICENSE-THIRD-PARTY.md](LICENSE-THIRD-PARTY.md)
 - **游戏素材**：著作权归 HYPERGRYPH（鹰角网络），本仓库仅作个人学习用途
+
+- **场景背景音乐**：六个场景各配一首曲子，切场景自动换曲；音量 0–9 可调，默认静音。

@@ -1,4 +1,5 @@
 #include "A_Config.h"
+#include "Bgm.h"
 #include "Atmosphere.h"
 #include "nvs_flash.h"
 
@@ -204,6 +205,20 @@ void AppSettings::setup()
         {
             lv_slider_set_value((lv_obj_t*)lv_event_get_target(e), hal._brightness, LV_ANIM_OFF);
         }
+        if (e->code == LV_EVENT_FOCUSED)
+            lv_obj_scroll_to_view(e->target->parent, LV_ANIM_OFF);
+    });
+
+    // 音量：0 = 静音（默认），9 = 最大；改完立刻生效并存进 NVS
+    create_settings_slider(_appScreen, "音量 / Volume", hal._volume, [](lv_event_t *e) {
+        if (e->code == LV_EVENT_VALUE_CHANGED)
+        {
+            hal.setVolume(lv_slider_get_value((lv_obj_t *)lv_event_get_target(e)));
+            hal.pref.putUInt("volume", hal._volume);
+            bgm::onVolumeChanged();
+        }
+        if (e->code == LV_EVENT_SCREEN_LOADED)
+            lv_slider_set_value((lv_obj_t *)lv_event_get_target(e), hal._volume, LV_ANIM_OFF);
         if (e->code == LV_EVENT_FOCUSED)
             lv_obj_scroll_to_view(e->target->parent, LV_ANIM_OFF);
     });

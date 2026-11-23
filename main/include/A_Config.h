@@ -24,6 +24,21 @@
 #define PIN_SERIAL1_RX 17
 #define PIN_SERIAL1_TX 1
 
+// ---- 音频（ES8311 + I2S，取自上游 idf-v5.1.4 分支）----
+#define AUDIO_AMP_CTRL 10
+#define AUDIO_I2S_GPIO_MCLK 7
+#define AUDIO_I2S_GPIO_WS   6
+#define AUDIO_I2S_GPIO_BCLK 2
+#define AUDIO_I2S_GPIO_DIN  4
+#define AUDIO_I2S_GPIO_DOUT 8
+#define AUDIO_CODEC_I2C_SDA_PIN 12
+#define AUDIO_CODEC_I2C_SCL_PIN 13
+#define AUDIO_RECV_BUF_SIZE (2400)
+#define AUDIO_SAMPLE_RATE (44100)
+#define AUDIO_MCLK_MULTIPLE (256)
+#define AUDIO_MCLK_FREQ_HZ (AUDIO_SAMPLE_RATE * AUDIO_MCLK_MULTIPLE)
+#define AUDIO_VOICE_VOLUME (60)
+
 #define screenHeight 240
 #define screenWidth 320
 #define FIRMWARE_VERSION "SCM_V4.0.0"

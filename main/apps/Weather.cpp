@@ -1,5 +1,6 @@
 #include "A_Config.h"
 #include "Atmosphere.h"
+#include "Bgm.h"
 #include "ArtStore.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -356,6 +357,8 @@ extern "C" void atmosphereRefresh(void) {
     const int scene = atmosphereSceneForCode(weatherHomeCode());
     const int band = atmosphereBandForHour(hal.datetime.hour);
     atmosphereUseSlot(artstore::backgroundSlotFor(weatherHomeCode(), hal.datetime.hour));
+    // 背景音乐跟着场景走：同一个 slot 表决定画面和曲子
+    bgm::setSlot(artstore::backgroundSlotFor(weatherHomeCode(), hal.datetime.hour));
 
     const lv_img_dsc_t *image = atmosphereImageFor(scene, band);
     if (image != atmosphereImage) {

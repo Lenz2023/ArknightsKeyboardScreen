@@ -4,9 +4,6 @@ cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-# Audio support has been removed from this firmware.
-set(EXCLUDE_COMPONENTS es8311)
-
 idf_build_set_property(COMPILE_OPTIONS "-Wno-error=stringop-truncation" APPEND)
 
 project(GK87-Screen)

@@ -104,6 +104,12 @@ public:
     void setTime(uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute, uint8_t second);
     bool NTPSync();
     void setBrightness(int8_t brightness);
+    esp_err_t audio_init();
+    void audio_stop();
+    size_t audio_write(const uint8_t *data, size_t len);
+    void audio_playWav(const uint8_t *wav, size_t len);
+    void audio_tone(int freq, int ms);
+    void setVolume(int8_t volume);
     void LOCKLV();
     void UNLOCKLV();
     void goSleep();
@@ -118,6 +124,10 @@ public:
     QueueHandle_t _queue_kb;
     Preferences pref;
     int8_t _brightness = 6;
+    int8_t _volume = 0;
+    uint8_t config_keytone = 0;
+    char config_keytone_file[32];
+    volatile bool keytone_play = false;
 
     char ssid[64];
     char password[64];

@@ -1,11 +1,20 @@
 #include "A_Config.h"
 #include "ArtStore.h"
 #include "Atmosphere.h"
+#include "Bgm.h"
+
+#include "es8311.h"
+#include "driver/i2s_std.h"
+#include <math.h>
+#include <Wire.h>
+#include "keytone/keytone2.h"
 
 #include <TFT_eSPI.h>
 TFT_eSPI tft = TFT_eSPI(); 
 
 HAL hal;
+i2s_chan_handle_t i2s_tx = nullptr;
+es8311_handle_t es_handle = es8311_create(I2C_NUM_0, ES8311_ADDRRES_0);
 #define DRAW_BUF_SIZE (2 * screenWidth * screenHeight)
 lv_indev_t *indev_keypad;
 
@@ -207,6 +216,8 @@ void HAL::init()
     WiFi.setHostname("skyloong-screen");
     lcd_init();
 
+    hal.audio_init();
+
     DS1302_begin(&rtc, PIN_RTC_SCLK, PIN_RTC_SDIO, PIN_RTC_RST);
     DS1302_writeClockRegister(&rtc, DS1302_REG_TC, 0xA5);
     if (LittleFS.begin(false) == false)
@@ -223,6 +234,11 @@ void HAL::init()
     loadAppSettings();
     pref.begin("settings", false);
     hal._brightness = pref.getUInt("bright", 6);
+    hal._volume = pref.getUInt("volume", 0);
+    hal.setVolume(hal._volume);
+    bgm::init();
+
+    // 开机不再自动发声：音量由设置页控制，默认 0（静音）
     hal.config_time_12hr = pref.getBool("12hr", false);
     hal.weather_enable = pref.getBool("weather_enable", true);
     hal.sleep_minutes = pref.getUShort("sleep_min", 10);
@@ -406,6 +422,166 @@ void HAL::setBrightness(int8_t brightness)
     }
 }
 
+esp_err_t HAL::audio_init()
+{
+    pinMode(AUDIO_AMP_CTRL, OUTPUT);
+    digitalWrite(AUDIO_AMP_CTRL, LOW);   // 功放先静音，音量设好再开
+
+    Wire.begin(AUDIO_CODEC_I2C_SDA_PIN, AUDIO_CODEC_I2C_SCL_PIN);
+
+    ESP_RETURN_ON_FALSE(es_handle, ESP_FAIL, "HAL", "es8311 create failed");
+    const es8311_clock_config_t es_clk = {
+        .mclk_inverted = false,
+        .sclk_inverted = false,
+        .mclk_from_mclk_pin = true,
+        .mclk_frequency = AUDIO_MCLK_FREQ_HZ,
+        .sample_frequency = AUDIO_SAMPLE_RATE
+    };
+    esp_err_t err = es8311_init(es_handle, &es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("HAL", "es8311 init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    es8311_microphone_config(es_handle, false);
+    es8311_voice_volume_set(es_handle, 0, NULL);
+
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    chan_cfg.auto_clear = true;
+    err = i2s_new_channel(&chan_cfg, &i2s_tx, NULL);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("HAL", "i2s_new_channel failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    i2s_std_config_t std_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(AUDIO_SAMPLE_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
+        .gpio_cfg = {
+            .mclk = (gpio_num_t)AUDIO_I2S_GPIO_MCLK,
+            .bclk = (gpio_num_t)AUDIO_I2S_GPIO_BCLK,
+            .ws = (gpio_num_t)AUDIO_I2S_GPIO_WS,
+            .dout = (gpio_num_t)AUDIO_I2S_GPIO_DOUT,
+            .din = (gpio_num_t)AUDIO_I2S_GPIO_DIN,
+            .invert_flags = { .mclk_inv = false, .bclk_inv = false, .ws_inv = false },
+        },
+    };
+    std_cfg.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
+    err = i2s_channel_init_std_mode(i2s_tx, &std_cfg);
+    if (err != ESP_OK)
+    {
+        ESP_LOGE("HAL", "i2s_channel_init_std_mode failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    i2s_channel_enable(i2s_tx);
+    ESP_LOGI("HAL", "audio ready: es8311 + i2s %d Hz (mclk=%d, bclk=%d, ws=%d, dout=%d)",
+             AUDIO_SAMPLE_RATE, AUDIO_I2S_GPIO_MCLK, AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS, AUDIO_I2S_GPIO_DOUT);
+    return ESP_OK;
+}
+
+void HAL::audio_stop()
+{
+    es8311_voice_volume_set(es_handle, 0, NULL);
+    digitalWrite(AUDIO_AMP_CTRL, LOW);
+    if (i2s_tx)
+    {
+        i2s_channel_disable(i2s_tx);
+        i2s_del_channel(i2s_tx);
+        i2s_tx = nullptr;
+    }
+}
+
+size_t HAL::audio_write(const uint8_t *data, size_t len)
+{
+    if (!i2s_tx || !data || !len)
+        return 0;
+    size_t written = 0;
+    if (i2s_channel_write(i2s_tx, data, len, &written, pdMS_TO_TICKS(1000)) != ESP_OK)
+        return 0;
+    return written;
+}
+
+void HAL::audio_playWav(const uint8_t *wav, size_t len)
+{
+    if (!i2s_tx || !wav || len < 44)
+        return;
+    if (memcmp(wav, "RIFF", 4) != 0 || memcmp(wav + 8, "WAVE", 4) != 0)
+    {
+        ESP_LOGW("HAL", "not a RIFF/WAVE buffer");
+        return;
+    }
+    size_t pos = 12;
+    const uint8_t *pcm = nullptr;
+    size_t pcm_len = 0;
+    while (pos + 8 <= len)
+    {
+        const uint8_t *id = wav + pos;
+        uint32_t chunk = (uint32_t)wav[pos + 4] | ((uint32_t)wav[pos + 5] << 8) |
+                         ((uint32_t)wav[pos + 6] << 16) | ((uint32_t)wav[pos + 7] << 24);
+        if (memcmp(id, "data", 4) == 0)
+        {
+            pcm = wav + pos + 8;
+            pcm_len = chunk;
+            if (pcm_len > len - (pos + 8))
+                pcm_len = len - (pos + 8);
+            break;
+        }
+        pos += 8 + chunk + (chunk & 1);
+    }
+    if (!pcm || !pcm_len)
+    {
+        ESP_LOGW("HAL", "wav has no data chunk");
+        return;
+    }
+    ESP_LOGI("HAL", "play wav: %u bytes pcm", (unsigned)pcm_len);
+    size_t off = 0;
+    while (off < pcm_len)
+    {
+        size_t chunk = pcm_len - off;
+        if (chunk > 4096)
+            chunk = 4096;
+        size_t written = 0;
+        if (i2s_channel_write(i2s_tx, pcm + off, chunk, &written, pdMS_TO_TICKS(1000)) != ESP_OK)
+        {
+            ESP_LOGW("HAL", "i2s write failed at %u", (unsigned)off);
+            break;
+        }
+        off += written;
+    }
+    ESP_LOGI("HAL", "wav done");
+}
+
+void HAL::audio_tone(int freq, int ms)
+{
+    if (!i2s_tx)
+        return;
+    int16_t frame[2];
+    const int total = (AUDIO_SAMPLE_RATE * ms) / 1000;
+    double phase = 0.0;
+    const double step = 2.0 * 3.14159265358979323846 * (double)freq / (double)AUDIO_SAMPLE_RATE;
+    size_t written = 0;
+    for (int i = 0; i < total; ++i)
+    {
+        int16_t v = (int16_t)(28000.0 * sin(phase));
+        phase += step;
+        frame[0] = v;
+        frame[1] = v;
+        i2s_channel_write(i2s_tx, frame, sizeof(frame), &written, pdMS_TO_TICKS(100));
+    }
+}
+
+void HAL::setVolume(int8_t volume)
+{
+    static const uint8_t volume_lut[10] = {0, 38, 46, 53, 59, 64, 68, 71, 73, 74};
+    if (volume < 0) volume = 0;
+    if (volume > 9) volume = 9;
+    _volume = volume;
+    if (!es_handle)
+        return;
+    es8311_voice_volume_set(es_handle, volume_lut[volume], NULL);
+    digitalWrite(AUDIO_AMP_CTRL, volume > 0 ? HIGH : LOW);
+}
 void HAL::LOCKLV()
 {
     xSemaphoreTake(_mutex, portMAX_DELAY);
@@ -1250,6 +1426,21 @@ void HAL::start_webserver()
     } else {
         server.onNotFound([]() { server.send(404, "text/plain", "FileNotFound"); });
     }
+
+    // 调试/验证用：/bgm?vol=5 或 /bgm?slot=5&vol=5
+    server.on("/bgm", HTTP_GET, []() {
+        if (server.hasArg("vol"))
+        {
+            int v = server.arg("vol").toInt();
+            hal.setVolume((int8_t)v);
+            hal.pref.putUInt("volume", hal._volume);
+        }
+        if (server.hasArg("slot"))
+            bgm::setSlot(server.arg("slot").toInt());
+        char out[128];
+        snprintf(out, sizeof(out), "vol=%d playing=%d", hal._volume, bgm::currentSlot());
+        server.send(200, "text/plain", out);
+    });
 
     server.on("/info", HTTP_GET, []() {
         cJSON *json = cJSON_CreateObject();
