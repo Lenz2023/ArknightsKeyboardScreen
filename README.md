@@ -51,6 +51,8 @@
 | **[使用教程](docs/USAGE.md)** | 按键速查、配网、扫码登录、日常使用、Web 图库怎么用、常见问题 |
 | **[功能说明](docs/FEATURES.md)** | 每个页面的实际行为，**背景按时间 + 天气切换的完整规则**、刷新节奏、存储布局 |
 | **[烧录指南](docs/FLASHING.md)** | 从零装 ESP-IDF 5.1.4 到烧进设备，含自动脚本与全部常见报错 |
+| **[硬件说明 · PDF](docs/hardware/hardware-manual.pdf)** | 主控、屏幕、音频、RTC、键盘串口、USB 的引脚分配与接口原理图，二次开发前先看这份（8 页） |
+| [硬件说明 · HTML 源](docs/hardware/hardware-manual.html) | 同一份文档的可编辑源，图是内联 SVG，改完可用浏览器重新导出 PDF |
 | **[网易云歌词插件](pc-companion/README_zh.md)** | BetterNCM 插件：把「正在播放」推到副屏，安装条件与原理 |
 
 ---

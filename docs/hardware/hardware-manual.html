@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>GK87 / GK4 键盘副屏 · 硬件说明</title>
+<style>
+@page { size: A4; margin: 16mm 14mm 16mm 14mm; }
+* { box-sizing: border-box; }
+body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; color: #16222b;
+  font-size: 10.5pt; line-height: 1.62; margin: 0; }
+h1 { font-size: 25pt; margin: 0 0 6mm; font-weight: 700; }
+h2 { font-size: 15pt; margin: 0 0 3mm; padding-bottom: 2mm; border-bottom: 2px solid #16222b; }
+h3 { font-size: 11.5pt; margin: 5mm 0 2mm; }
+p { margin: 0 0 2.5mm; }
+ul, ol { margin: 0 0 2.5mm; padding-left: 6mm; }
+li { margin-bottom: 1.2mm; }
+code { font-family: "Cascadia Mono", Consolas, monospace; font-size: 9.5pt;
+  background: #eef2f5; padding: 0 1.2mm; border-radius: 2px; }
+table { width: 100%; border-collapse: collapse; margin: 2mm 0 3mm; font-size: 9.5pt; }
+th, td { border: 1px solid #c3cdd6; padding: 1.4mm 2mm; text-align: left; vertical-align: top; }
+th { background: #eef2f5; font-weight: 600; }
+td.pin { font-family: "Cascadia Mono", Consolas, monospace; white-space: nowrap; }
+.page { page-break-after: always; }
+.page:last-child { page-break-after: auto; }
+.cover { padding-top: 38mm; }
+.cover .sub { font-size: 13pt; color: #4a5b68; margin-bottom: 22mm; }
+.cover .meta { font-size: 9.8pt; color: #5c6c78; border-top: 1px solid #c3cdd6; padding-top: 4mm; }
+.cover .tag { display: inline-block; font-size: 9pt; letter-spacing: 2px; color: #8a5a1e;
+  border: 1px solid #d9b382; padding: 1mm 3mm; border-radius: 2px; margin-bottom: 8mm; }
+.note { background: #f7f4ec; border-left: 3px solid #b98b3d; padding: 3mm 4mm; margin: 3mm 0; font-size: 9.8pt; }
+.warn { background: #fdf0ee; border-left: 3px solid #c1553f; padding: 3mm 4mm; margin: 3mm 0; font-size: 9.6pt; }
+.fig { margin: 4mm 0 2mm; text-align: center; }
+.figcap { font-size: 9pt; color: #5c6c78; text-align: center; margin-bottom: 4mm; }
+.src { font-size: 8.6pt; color: #6b7a86; margin: -1mm 0 3mm; }
+svg { max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+
+<section class="page cover">
+  <div class="tag">HARDWARE REFERENCE</div>
+  <h1>GK87 / GK4 键盘副屏<br>硬件说明</h1>
+  <div class="sub">ESP32-S3 · 320×240 并口 TFT · ES8311 音频<br>接口定义、引脚分配与电路说明</div>
+  <p><strong>适用固件：</strong>Arknights Keyboard Screen 1.2.0</p>
+  <p><strong>适用硬件：</strong>SKYLOONG GK87 / GK4 键盘右上角副屏模块</p>
+  <p><strong>版本：</strong>2026-11</p>
+  <div class="meta">
+    本文所有引脚、时序与行为均逐项取自本工程源码：<code>main/include/A_Config.h</code>（引脚宏）、
+    <code>sdkconfig</code>（TFT 驱动配置）、<code>components/TFT_eSPI/User_Setup.h</code>（并口数据线）、
+    <code>main/hal.cpp</code>（初始化与音量/亮度实现）、<code>main/protocol.cpp</code>（UART 帧与消息类型）。
+    每节标题下标注了出处；原理图为按接口关系绘制的功能框图，不是可直接投板的原始图纸。
+  </div>
+</section>
+
+<section class="page">
+  <h2>一、系统概述</h2>
+  <p class="src">依据：<code>sdkconfig</code>、<code>main/hal.cpp</code> 的 <code>HAL::init()</code></p>
+  <p>副屏模块是一块独立的 ESP32-S3 小板。它通过 <b>UART</b> 接收键盘主控送来的按键、电量和状态，
+  接管键盘自带的 320×240 屏幕，并负责联网（Wi-Fi）、显示和出声。整机由键盘的 USB-C 供电。</p>
+
+  <table>
+    <tr><th style="width:20%">部件</th><th style="width:30%">型号 / 规格</th><th>说明</th></tr>
+    <tr><td>主控</td><td>ESP32-S3（QFN56，芯片 rev v0.2）</td><td>双核 Xtensa LX7 @240 MHz，内置 Wi-Fi / BLE</td></tr>
+    <tr><td>Flash</td><td>16 MB（片外）</td><td>双 OTA 各 5 MB，另有约 5.8 MB 数据分区</td></tr>
+    <tr><td>PSRAM</td><td>8 MB（AP_3v3）</td><td>立绘解码、图像缓存、音频数据</td></tr>
+    <tr><td>晶振</td><td>40 MHz</td><td>主时钟</td></tr>
+    <tr><td>显示屏</td><td>ST7789 · 240×320 原生 · IPS</td><td>8 位 8080 并口；<code>setRotation(3)</code> 后为 320×240，BGR 顺序，软件反色</td></tr>
+    <tr><td>音频编解码</td><td>ES8311（I2C 从机 0x18）</td><td>I2C 配置 + I2S 数据，外接功放（GPIO10 使能）</td></tr>
+    <tr><td>实时时钟</td><td>DS1302</td><td>三线串行（SCLK / SDIO / CE），走时靠纽扣电池</td></tr>
+    <tr><td>键盘通信</td><td>UART1 · 115200 8N1</td><td>自定义帧：STX / LEN / TYPE / DATA / ETX / CRC</td></tr>
+    <tr><td>USB</td><td>ESP32-S3 原生 USB-Serial-JTAG</td><td>无外置转串口芯片；同时枚举日志口与烧录口</td></tr>
+  </table>
+
+  <div class="fig">
+  <svg viewBox="0 0 720 350" xmlns="http://www.w3.org/2000/svg" font-family="Microsoft YaHei" font-size="11">
+    <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#16222b"/></marker></defs>
+
+    <rect x="10" y="120" width="120" height="86" rx="4" fill="#eef2f5" stroke="#16222b"/>
+    <text x="70" y="148" text-anchor="middle" font-weight="600">键盘主控 MCU</text>
+    <text x="70" y="166" text-anchor="middle" font-size="10">按键 / 旋钮 / 电池</text>
+    <text x="70" y="184" text-anchor="middle" font-size="10">USB-C 供电</text>
+
+    <rect x="230" y="60" width="200" height="230" rx="6" fill="#16222b"/>
+    <text x="330" y="86" text-anchor="middle" fill="#fff" font-weight="700" font-size="13">ESP32-S3</text>
+    <text x="330" y="104" text-anchor="middle" fill="#c9d6de" font-size="10">16 MB Flash · 8 MB PSRAM</text>
+
+    <rect x="540" y="34" width="170" height="66" rx="4" fill="#eef2f5" stroke="#16222b"/>
+    <text x="625" y="58" text-anchor="middle" font-weight="600">ST7789 TFT</text>
+    <text x="625" y="76" text-anchor="middle" font-size="10">240×320 · 8 位并口</text>
+
+    <rect x="540" y="118" width="170" height="66" rx="4" fill="#eef2f5" stroke="#16222b"/>
+    <text x="625" y="142" text-anchor="middle" font-weight="600">ES8311 + 功放</text>
+    <text x="625" y="160" text-anchor="middle" font-size="10">I2C 配置 / I2S 数据</text>
+
+    <rect x="540" y="202" width="170" height="66" rx="4" fill="#eef2f5" stroke="#16222b"/>
+    <text x="625" y="226" text-anchor="middle" font-weight="600">DS1302 RTC</text>
+    <text x="625" y="244" text-anchor="middle" font-size="10">SCLK / SDIO / CE</text>
+
+    <rect x="240" y="308" width="180" height="34" rx="4" fill="#eef2f5" stroke="#16222b"/>
+    <text x="330" y="330" text-anchor="middle" font-size="10">USB 原生口（烧录 / 日志）</text>
+
+    <line x1="130" y1="160" x2="226" y2="160" stroke="#16222b" stroke-width="1.6" marker-end="url(#a)"/>
+    <line x1="226" y1="176" x2="132" y2="176" stroke="#16222b" stroke-width="1.6" marker-end="url(#a)"/>
+    <text x="178" y="152" text-anchor="middle" font-size="10">UART1 TX (GPIO1)</text>
+    <text x="178" y="193" text-anchor="middle" font-size="10">UART1 RX (GPIO17)</text>
+
+    <line x1="430" y1="70" x2="536" y2="66" stroke="#16222b" stroke-width="1.6" marker-end="url(#a)"/>
+    <text x="483" y="42" text-anchor="middle" font-size="9.5">D0–D7</text>
+    <text x="483" y="55" text-anchor="middle" font-size="9.5">WR RD CS DC RST</text>
+
+    <line x1="430" y1="150" x2="536" y2="150" stroke="#16222b" stroke-width="1.6" marker-end="url(#a)"/>
+    <text x="483" y="142" text-anchor="middle" font-size="9.5">I2S + I2C</text>
+
+    <line x1="430" y1="234" x2="536" y2="234" stroke="#16222b" stroke-width="1.6" marker-end="url(#a)"/>
+    <text x="483" y="226" text-anchor="middle" font-size="9.5">GPIO 9 / 11 / 0</text>
+
+    <line x1="330" y1="290" x2="330" y2="306" stroke="#16222b" stroke-width="1.6" marker-end="url(#a)"/>
+  </svg>
+  </div>
+  <div class="figcap">图 1　系统连接框图</div>
+
+  <div class="note">
+    <b>职责边界：</b>按键矩阵、旋钮、电量采集、休眠判定都在键盘主控侧，副屏不直接扫描按键；
+    主控把事件打包成 UART 帧推过来，副屏只做“显示 + 联网 + 出声”。
+  </div>
+</section>
+
+<section class="page">
+  <h2>二、引脚分配总表</h2>
+  <p class="src">依据：<code>main/include/A_Config.h</code>（宏定义）、<code>sdkconfig</code> 的 <code>CONFIG_TFT_*</code>、<code>components/TFT_eSPI/User_Setup.h</code>（并口数据线）</p>
+  <p>下面列出的就是固件里实际被使用的全部 GPIO，其余引脚未占用。所有信号为 <b>3.3 V</b> 电平。</p>
+
+  <h3>2.1 显示屏（ST7789，8080 并口 8 位）</h3>
+  <table>
+    <tr><th style="width:14%">信号</th><th style="width:26%">GPIO</th><th style="width:12%">方向</th><th>说明</th></tr>
+    <tr><td>D0</td><td class="pin">47</td><td>输出</td><td rowspan="8">8 位数据总线。一次写一个字节；<br>整屏 320×240×16bit = 150 KB</td></tr>
+    <tr><td>D1</td><td class="pin">48</td><td>输出</td></tr>
+    <tr><td>D2</td><td class="pin">45</td><td>输出</td></tr>
+    <tr><td>D3</td><td class="pin">38</td><td>输出</td></tr>
+    <tr><td>D4</td><td class="pin">39</td><td>输出</td></tr>
+    <tr><td>D5</td><td class="pin">40</td><td>输出</td></tr>
+    <tr><td>D6</td><td class="pin">41</td><td>输出</td></tr>
+    <tr><td>D7</td><td class="pin">42</td><td>输出</td></tr>
+    <tr><td>WR</td><td class="pin">14</td><td>输出</td><td>写选通，上升沿锁存数据</td></tr>
+    <tr><td>RD</td><td class="pin">5</td><td>输出</td><td>读选通；固件只写屏，不使用读回</td></tr>
+    <tr><td>CS</td><td class="pin">15</td><td>输出</td><td>片选，低有效</td></tr>
+    <tr><td>DC</td><td class="pin">16</td><td>输出</td><td>0 = 命令，1 = 数据</td></tr>
+    <tr><td>RST</td><td class="pin">18</td><td>输出</td><td>硬复位，低有效</td></tr>
+    <tr><td>BL</td><td class="pin">21</td><td>输出</td><td>背光，<b>LEDC PWM</b>：16 kHz、8 位分辨率，分 0–9 档</td></tr>
+    <tr><td>PWR</td><td class="pin">3</td><td>输出</td><td>屏幕供电开关，固件上电即拉低（低电平导通）</td></tr>
+  </table>
+  <div class="note">
+    配置项：<code>CONFIG_TFT_ST7789_DRIVER=y</code>、<code>CONFIG_TFT_PARALLEL_8_BIT=y</code>、
+    <code>CONFIG_TFT_BGR_ORDER=y</code>、<code>CONFIG_TFT_WIDTH=240</code>、<code>CONFIG_TFT_HEIGHT=320</code>、
+    <code>CONFIG_TFT_INVERSION_OFF=y</code>，但 <code>lcd_init()</code> 里又调用了 <code>tft.invertDisplay(true)</code>——
+    实际显示颜色正确依赖这一句软件反色。
+  </div>
+
+  <h3>2.2 音频（ES8311 + I2S）</h3>
+  <table>
+    <tr><th style="width:16%">信号</th><th style="width:12%">GPIO</th><th style="width:14%">方向</th><th>说明</th></tr>
+    <tr><td>I2C SDA</td><td class="pin">12</td><td>双向</td><td>ES8311 寄存器配置（<code>ES8311_ADDRRES_0</code> = 0x18）</td></tr>
+    <tr><td>I2C SCL</td><td class="pin">13</td><td>输出</td><td>I2C 时钟</td></tr>
+    <tr><td>MCLK</td><td class="pin">7</td><td>输出</td><td>主时钟，44.1 kHz × 256 = 11.2896 MHz</td></tr>
+    <tr><td>BCLK</td><td class="pin">2</td><td>输出</td><td>位时钟</td></tr>
+    <tr><td>LRCK / WS</td><td class="pin">6</td><td>输出</td><td>左右声道选择</td></tr>
+    <tr><td>DOUT</td><td class="pin">8</td><td>ESP → 编解码</td><td>PCM 数据输出</td></tr>
+    <tr><td>DIN</td><td class="pin">4</td><td>编解码 → ESP</td><td>PCM 数据输入；已接线，但固件未使用麦克风</td></tr>
+    <tr><td>AMP CTRL</td><td class="pin">10</td><td>输出</td><td>功放使能：音量 &gt; 0 拉高，音量 = 0 拉低（静音）</td></tr>
+  </table>
+
+  <h3>2.3 RTC 与键盘通信</h3>
+  <table>
+    <tr><th style="width:16%">信号</th><th style="width:12%">GPIO</th><th style="width:14%">方向</th><th>说明</th></tr>
+    <tr><td>DS1302 SCLK</td><td class="pin">9</td><td>输出</td><td>RTC 时钟</td></tr>
+    <tr><td>DS1302 SDIO</td><td class="pin">11</td><td>双向</td><td>RTC 数据</td></tr>
+    <tr><td>DS1302 CE / RST</td><td class="pin">0</td><td>输出</td><td>RTC 片选</td></tr>
+    <tr><td>UART1 RX</td><td class="pin">17</td><td>键盘 → ESP</td><td>接收按键、状态、电量</td></tr>
+    <tr><td>UART1 TX</td><td class="pin">1</td><td>ESP → 键盘</td><td>回 ACK、版本号、时间同步</td></tr>
+  </table>
+
+  <h3>2.4 USB</h3>
+  <table>
+    <tr><th style="width:16%">信号</th><th style="width:12%">GPIO</th><th>说明</th></tr>
+    <tr><td>USB D− / D+</td><td class="pin">19 / 20</td><td>ESP32-S3 芯片内部固定，无需外部配置；同一根线枚举出两个设备节点</td></tr>
+  </table>
+  <div class="note">
+    枚举出的两个节点分工不同：<code>USB 串行设备 (COMx)</code> 只输出日志，
+    <code>USB JTAG/serial debug unit (COMy)</code> 才是烧录口。网页刷机与 <code>idf.py flash</code> 都选后者。
+  </div>
+</section>
+
+<section class="page">
+  <h2>三、显示接口</h2>
+  <p class="src">依据：<code>main/hal.cpp</code> 的 <code>lcd_init()</code> 与 <code>HAL::setBrightness()</code>、<code>components/TFT_eSPI/User_Setup.h</code></p>
+  <p>屏幕走 <b>8080 并口（8 位）</b>而不是 SPI。原因很直接：一帧 320×240×16bit 是 150 KB，
+  并口每个写周期送一个字节，整屏刷新比 SPI 快一个量级，切页和滚动才不糊。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 700 268" xmlns="http://www.w3.org/2000/svg" font-family="Microsoft YaHei" font-size="11">
+    <rect x="40" y="26" width="170" height="212" rx="6" fill="#16222b"/>
+    <text x="125" y="56" text-anchor="middle" fill="#fff" font-weight="700">ESP32-S3</text>
+    <text x="125" y="76" text-anchor="middle" fill="#c9d6de" font-size="10">并口主控</text>
+    <text x="125" y="94" text-anchor="middle" fill="#c9d6de" font-size="10">旋转后 320×240</text>
+    <text x="125" y="112" text-anchor="middle" fill="#c9d6de" font-size="10">软件反色</text>
+
+    <rect x="490" y="26" width="170" height="212" rx="6" fill="#eef2f5" stroke="#16222b"/>
+    <text x="575" y="56" text-anchor="middle" font-weight="700">ST7789</text>
+    <text x="575" y="76" text-anchor="middle" font-size="10">240×320 原生 IPS</text>
+    <text x="575" y="94" text-anchor="middle" font-size="10">BGR 子像素顺序</text>
+    <text x="575" y="206" text-anchor="middle" font-size="10">BL / PWR 独立控制</text>
+
+    <g stroke="#16222b" stroke-width="1.3">
+      <line x1="210" y1="128" x2="488" y2="128"/><line x1="210" y1="141" x2="488" y2="141"/>
+      <line x1="210" y1="154" x2="488" y2="154"/><line x1="210" y1="167" x2="488" y2="167"/>
+      <line x1="210" y1="180" x2="488" y2="180"/><line x1="210" y1="193" x2="488" y2="193"/>
+      <line x1="210" y1="206" x2="488" y2="206"/><line x1="210" y1="219" x2="488" y2="219"/>
+    </g>
+    <text x="349" y="120" text-anchor="middle" font-size="9.5">D0–D7（GPIO 47 48 45 38 39 40 41 42）</text>
+
+    <g stroke="#16222b" stroke-width="1.3">
+      <line x1="210" y1="46" x2="488" y2="46"/><line x1="210" y1="62" x2="488" y2="62"/>
+      <line x1="210" y1="78" x2="488" y2="78"/>
+    </g>
+    <text x="349" y="38" text-anchor="middle" font-size="9.5">WR(14) / RD(5) / CS(15)</text>
+    <text x="349" y="100" text-anchor="middle" font-size="9.5">DC(16) / RST(18)</text>
+  </svg>
+  </div>
+  <div class="figcap">图 2　并口显示接口：8 根数据线 + 5 根控制线</div>
+
+  <h3>3.1 写时序</h3>
+  <ul>
+    <li>写命令：<code>CS=L, DC=0</code> → 数据放 D0–D7 → <code>WR</code> 拉低再拉高（上升沿锁存）。</li>
+    <li>写数据：<code>CS=L, DC=1</code>，时序同上。</li>
+    <li>并口模式 <b>不能用 DMA</b>（TFT_eSPI 会给出 <code>DMA is not supported in parallel mode</code> 的编译提示），
+        刷新靠 CPU 直写；所以界面逻辑尽量只重绘变化区域。</li>
+  </ul>
+
+  <h3>3.2 初始化顺序（<code>lcd_init()</code>）</h3>
+  <ol>
+    <li><code>pinMode(PIN_DISPLAY_PWR, OUTPUT)</code> → <code>digitalWrite(..., LOW)</code>：给屏上电（低有效）。</li>
+    <li><code>ledcAttach(PIN_DISPLAY_BL, 16000, 8)</code>：背光 PWM 16 kHz / 8 位，初始占空比 0（全暗）。</li>
+    <li><code>delay(1000)</code>：等面板电源稳定。</li>
+    <li><code>tft.init()</code> → <code>tft.setRotation(3)</code>（转成 320×240 横屏）→ 清屏 → <code>tft.invertDisplay(true)</code>。</li>
+  </ol>
+
+  <h3>3.3 亮度</h3>
+  <p>亮度是 0–9 档，直接映射成 PWM 占空比；熄屏时写 0。注意 <b>0 档不是全黑</b>（占空比 10），
+  真正的“关屏”是熄屏逻辑把占空比写成 0。</p>
+  <table>
+    <tr><th>档位</th><td class="pin">0</td><td class="pin">1</td><td class="pin">2</td><td class="pin">3</td><td class="pin">4</td><td class="pin">5</td><td class="pin">6</td><td class="pin">7</td><td class="pin">8</td><td class="pin">9</td></tr>
+    <tr><th>占空比</th><td class="pin">10</td><td class="pin">15</td><td class="pin">20</td><td class="pin">30</td><td class="pin">40</td><td class="pin">60</td><td class="pin">90</td><td class="pin">130</td><td class="pin">180</td><td class="pin">255</td></tr>
+  </table>
+</section>
+
+<section class="page">
+  <h2>四、音频接口</h2>
+  <p class="src">依据：<code>main/hal.cpp</code> 的 <code>HAL::audio_init()</code> / <code>HAL::setVolume()</code>、<code>main/include/A_Config.h</code></p>
+  <p>链路是 <b>ESP32-S3 → ES8311（DAC）→ 功放 → 喇叭</b>。ESP32-S3 用 I2S 送 PCM，用另一路 I2C 配置编解码器；
+  功放使能单独一根 GPIO，音量归零时一起拉低，避免底噪。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 700 250" xmlns="http://www.w3.org/2000/svg" font-family="Microsoft YaHei" font-size="11">
+    <defs><marker id="b" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 z" fill="#16222b"/></marker></defs>
+    <rect x="26" y="40" width="150" height="170" rx="6" fill="#16222b"/>
+    <text x="101" y="70" text-anchor="middle" fill="#fff" font-weight="700">ESP32-S3</text>
+    <text x="101" y="90" text-anchor="middle" fill="#c9d6de" font-size="10">I2S 主机</text>
+    <text x="101" y="108" text-anchor="middle" fill="#c9d6de" font-size="10">44.1 kHz / 16 bit</text>
+    <text x="101" y="126" text-anchor="middle" fill="#c9d6de" font-size="10">I2C 主机</text>
+
+    <rect x="280" y="40" width="160" height="120" rx="6" fill="#eef2f5" stroke="#16222b"/>
+    <text x="360" y="68" text-anchor="middle" font-weight="700">ES8311</text>
+    <text x="360" y="88" text-anchor="middle" font-size="10">DAC / ADC · 从机 0x18</text>
+    <text x="360" y="106" text-anchor="middle" font-size="10">16 bit 分辨率</text>
+    <text x="360" y="140" text-anchor="middle" font-size="10">音量 0–100</text>
+
+    <rect x="530" y="40" width="140" height="66" rx="6" fill="#eef2f5" stroke="#16222b"/>
+    <text x="600" y="66" text-anchor="middle" font-weight="600">功放</text>
+    <text x="600" y="86" text-anchor="middle" font-size="10">使能 GPIO10</text>
+
+    <rect x="530" y="140" width="140" height="60" rx="6" fill="#eef2f5" stroke="#16222b"/>
+    <text x="600" y="166" text-anchor="middle" font-weight="600">喇叭</text>
+    <text x="600" y="184" text-anchor="middle" font-size="10">键盘内置</text>
+
+    <line x1="176" y1="72" x2="278" y2="72" stroke="#16222b" stroke-width="1.5" marker-end="url(#b)"/>
+    <text x="227" y="64" text-anchor="middle" font-size="9.5">MCLK / BCLK / WS</text>
+    <line x1="176" y1="100" x2="278" y2="100" stroke="#16222b" stroke-width="1.5" marker-end="url(#b)"/>
+    <text x="227" y="92" text-anchor="middle" font-size="9.5">DOUT（PCM）</text>
+    <line x1="278" y1="126" x2="178" y2="126" stroke="#16222b" stroke-width="1.5" marker-end="url(#b)"/>
+    <text x="227" y="144" text-anchor="middle" font-size="9.5">DIN（未使用）</text>
+    <line x1="176" y1="170" x2="278" y2="170" stroke="#16222b" stroke-width="1.5" marker-end="url(#b)"/>
+    <text x="227" y="188" text-anchor="middle" font-size="9.5">I2C SDA / SCL</text>
+
+    <line x1="440" y1="76" x2="528" y2="76" stroke="#16222b" stroke-width="1.5" marker-end="url(#b)"/>
+    <text x="484" y="68" text-anchor="middle" font-size="9.5">模拟输出</text>
+    <line x1="600" y1="106" x2="600" y2="138" stroke="#16222b" stroke-width="1.5" marker-end="url(#b)"/>
+  </svg>
+  </div>
+  <div class="figcap">图 3　音频信号链</div>
+
+  <h3>4.1 初始化顺序（<code>HAL::audio_init()</code>）</h3>
+  <ol>
+    <li><code>pinMode(AUDIO_AMP_CTRL, OUTPUT)</code> 并 <b>先拉低</b>——功放保持静音，避免上电爆音。</li>
+    <li><code>Wire.begin(12, 13)</code>；<code>es8311_create(I2C_NUM_0, ES8311_ADDRRES_0)</code>。</li>
+    <li><code>es8311_init(handle, &amp;es_clk, ES8311_RESOLUTION_16, ES8311_RESOLUTION_16)</code>：16 bit 采样。</li>
+    <li><code>es8311_microphone_config(handle, false)</code>：关闭麦克风通路。</li>
+    <li><code>es8311_voice_volume_set(handle, 0, NULL)</code>：先把音量归零。</li>
+    <li>建 I2S 通道：<code>I2S_NUM_0</code> 主机、标准模式、44.1 kHz、16 bit、双声道、MCLK 256 倍频，然后 <code>i2s_channel_enable()</code>。</li>
+    <li>启动时读存档音量并 <code>setVolume()</code>；<b>默认 0（静音）</b>。</li>
+  </ol>
+
+  <h3>4.2 音量控制（<code>HAL::setVolume()</code>）</h3>
+  <p>音量 0–9 档，查表换算成 ES8311 的 0–100 数字量写入寄存器；同时按档位开关功放使能脚。</p>
+  <table>
+    <tr><th>档位</th><td class="pin">0</td><td class="pin">1</td><td class="pin">2</td><td class="pin">3</td><td class="pin">4</td><td class="pin">5</td><td class="pin">6</td><td class="pin">7</td><td class="pin">8</td><td class="pin">9</td></tr>
+    <tr><th>寄存器值</th><td class="pin">0</td><td class="pin">38</td><td class="pin">46</td><td class="pin">53</td><td class="pin">59</td><td class="pin">64</td><td class="pin">68</td><td class="pin">71</td><td class="pin">73</td><td class="pin">74</td></tr>
+    <tr><th>功放</th><td class="pin">低</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td><td class="pin">高</td></tr>
+  </table>
+  <div class="warn">
+    默认音量是 <b>0</b>，此时功放使能脚为低、播放任务空转不解码。所以“没有声音”先看设置页的音量滑杆，
+    而不是怀疑硬件。
+  </div>
+</section>
+
+<section class="page">
+  <h2>五、RTC 接口（DS1302）</h2>
+  <p class="src">依据：<code>main/hal.cpp</code> 的 <code>HAL::init()</code>（<code>DS1302_begin</code> 调用处）</p>
+  <p>DS1302 是经典三线串行 RTC，接在三个普通 GPIO 上。初始化时固件会传入引脚号并写一次涓流充电寄存器
+  （<code>DS1302_writeClockRegister(&amp;rtc, DS1302_REG_TC, 0xA5)</code>）；联网后由 NTP 校时，校时结果再写回 RTC。</p>
+  <table>
+    <tr><th style="width:22%">信号</th><th style="width:14%">GPIO</th><th>说明</th></tr>
+    <tr><td>SCLK</td><td class="pin">9</td><td>时钟，MCU 输出</td></tr>
+    <tr><td>SDIO</td><td class="pin">11</td><td>数据，双向（读时间 / 写时间）</td></tr>
+    <tr><td>CE / RST</td><td class="pin">0</td><td>片选，一次读写开始时拉高</td></tr>
+  </table>
+  <div class="note">
+    走时依赖模块背面的纽扣电池（VBAT）。电池没电时开机时间会退回默认值，联上网后靠 NTP 校正。
+  </div>
+
+  <h2 style="margin-top:9mm">六、键盘通信接口（UART1）</h2>
+  <p class="src">依据：<code>main/protocol.cpp</code>（帧结构、CRC、消息类型）与 <code>main/include/A_Config.h</code>（引脚）</p>
+  <p>副屏与键盘主控之间只有两根线：<code>GPIO17</code> 收、<code>GPIO1</code> 发，115200 8N1。
+  帧结构是自定义的，带帧头、长度、类型与异或 CRC。</p>
+
+  <div class="fig">
+  <svg viewBox="0 0 700 172" xmlns="http://www.w3.org/2000/svg" font-family="Microsoft YaHei" font-size="10.5">
+    <rect x="18" y="34" width="74" height="46" fill="#16222b"/>
+    <text x="55" y="62" text-anchor="middle" fill="#fff">STX</text>
+    <text x="55" y="98" text-anchor="middle" font-size="9">0x02</text>
+
+    <rect x="94" y="34" width="104" height="46" fill="#eef2f5" stroke="#16222b"/>
+    <text x="146" y="62" text-anchor="middle">LEN</text>
+    <text x="146" y="98" text-anchor="middle" font-size="9">2 字节（大端）</text>
+
+    <rect x="200" y="34" width="86" height="46" fill="#eef2f5" stroke="#16222b"/>
+    <text x="243" y="62" text-anchor="middle">TYPE</text>
+    <text x="243" y="98" text-anchor="middle" font-size="9">1 字节</text>
+
+    <rect x="288" y="34" width="180" height="46" fill="#eef2f5" stroke="#16222b"/>
+    <text x="378" y="62" text-anchor="middle">DATA</text>
+    <text x="378" y="98" text-anchor="middle" font-size="9">LEN − 1 字节，最长 128</text>
+
+    <rect x="470" y="34" width="78" height="46" fill="#16222b"/>
+    <text x="509" y="62" text-anchor="middle" fill="#fff">ETX</text>
+    <text x="509" y="98" text-anchor="middle" font-size="9">0x03</text>
+
+    <rect x="550" y="34" width="90" height="46" fill="#eef2f5" stroke="#16222b"/>
+    <text x="595" y="62" text-anchor="middle">CRC</text>
+    <text x="595" y="98" text-anchor="middle" font-size="9">1 字节</text>
+
+    <text x="18" y="134" font-size="9.5" fill="#4a5b68">CRC = (LEN&gt;&gt;8) ^ (LEN&amp;0xFF) ^ TYPE ^ DATA[0..LEN-2] ^ ETX</text>
+    <text x="18" y="152" font-size="9.5" fill="#4a5b68">收到合法帧后回 0x06（ACK）；协议结构体 data 固定 128 字节</text>
+  </svg>
+  </div>
+  <div class="figcap">图 4　UART 帧结构</div>
+
+  <table>
+    <tr><th style="width:26%">类型（宏）</th><th style="width:14%">值</th><th>用途</th></tr>
+    <tr><td><code>PROTOCOL_TYPE_VERSION</code></td><td class="pin">0x1A</td><td>主控取副屏固件版本号</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_DISP_MODE</code></td><td class="pin">0x1C</td><td>显示模式切换</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_STATUS</code></td><td class="pin">0x1D</td><td>键盘状态结构体（连接、模式等）</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_ECHO</code></td><td class="pin">0x16</td><td>回环 / 心跳</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_MENU</code></td><td class="pin">0xA3</td><td>菜单与按键事件，DATA[0] 为子命令（见下）</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_PARAM</code></td><td class="pin">0xA0</td><td>参数设置</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_TIME</code></td><td class="pin">0x1E</td><td>时间同步</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_BATTERY</code></td><td class="pin">0x1F</td><td>电量百分比</td></tr>
+    <tr><td><code>PROTOCOL_TYPE_KEYPRESS</code></td><td class="pin">0xF3</td><td>按键事件</td></tr>
+  </table>
+
+  <h3>6.1 MENU(0xA3) 的子命令</h3>
+  <table>
+    <tr><th style="width:14%">子命令</th><th>行为</th></tr>
+    <tr><td class="pin">0xA0</td><td>进 / 退编辑模式（右下两个键同时长按），进入时切到设置页</td></tr>
+    <tr><td class="pin">0xA1</td><td>Backspace</td></tr>
+    <tr><td class="pin">0xA2 / 0xA3 / 0xA4 / 0xA5</td><td>方向键 左 / 右 / 上 / 下</td></tr>
+    <tr><td class="pin">0xAA</td><td>Enter</td></tr>
+    <tr><td class="pin">0xAE</td><td>菜单间切换（右下 + 左上短按）</td></tr>
+    <tr><td class="pin">0xAF</td><td>开关屏幕</td></tr>
+  </table>
+  <div class="note">
+    <b>唤醒逻辑也在这条口上：</b>屏幕处于休眠态时收到任意一帧，固件先恢复亮度、把 <code>time_sync</code> 置位
+    （触发一次校时），然后再处理该帧——所以按一下键就能点亮并自动校时。
+  </div>
+  <p class="src" style="margin-top:4mm">
+    说明：上表子命令与触发组合直接取自 <code>protocol.cpp</code> 的注释；键位在键盘上的具体丝印以键盘本体为准。
+  </p>
+</section>
+
+</body>
+</html>
